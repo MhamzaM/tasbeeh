@@ -77,6 +77,7 @@
     counts: {},          // id -> { n, rounds }
     seq: {},             // sequence id -> { step, n }
     custom: [],          // [{ id, name, target }]
+    names: {},           // custom id -> name, kept after deletion so history can still label it
     history: {},         // "YYYY-MM-DD" -> { id: count }
     settings: { vibrateTap: true, vibrateTarget: true, sound: false, volumeKeys: true, keepAwake: true, showMeaning: true },
   });
@@ -89,7 +90,9 @@
       if (raw) {
         const d = JSON.parse(raw);
         const base = defaults();
-        return Object.assign(base, d, { settings: Object.assign(base.settings, d.settings || {}) });
+        const st = Object.assign(base, d, { settings: Object.assign(base.settings, d.settings || {}) });
+        for (const c of st.custom) if (!st.names[c.id]) st.names[c.id] = c.name;
+        return st;
       }
     } catch (e) {}
     return defaults();
@@ -176,7 +179,7 @@
       else return;
     }
     logHistory(active().dhikr.id, -1);
-    vibrate(12);
+    vibrate(TICK_MS);
     save();
     render(false);
   }
@@ -202,6 +205,7 @@
 
   // ------------------------------------------------------------ feedback
 
+  const TICK_MS = 30;
   function vibrate(ms) {
     try {
       if (native && native.vibrate) native.vibrate(ms);
@@ -243,13 +247,13 @@
   }
 
   function tick() {
-    if (S.settings.vibrateTap) vibrate(14);
+    if (S.settings.vibrateTap) vibrate(TICK_MS);
     click(false);
   }
 
   function reachedTarget(name, target, sequenceDone) {
     if (S.settings.vibrateTarget) vibratePattern(sequenceDone ? [0, 90, 80, 90, 80, 160] : [0, 70, 70, 140]);
-    else if (S.settings.vibrateTap) vibrate(14);
+    else if (S.settings.vibrateTap) vibrate(TICK_MS);
     click(true);
     toast(sequenceDone ? tr().seqDone : tr().targetReached(name, fmtNum(target)));
   }
@@ -431,7 +435,7 @@
       .sort((a, b) => b[1] - a[1])
       .map(([id, v]) => {
         const dh = findDhikr(id);
-        const name = dh ? dh.name : id;
+        const name = dh ? dh.name : S.names[id] || t.custom;
         return "<li><span>" + (dh && dh.ar ? '<span class="ar" lang="ar">' + dh.ar + "</span> " : "") + esc(name) + "</span><b>" + fmtNum(v) + "</b></li>";
       });
 
@@ -542,6 +546,7 @@
     if (!name || !target) return;
     const id = "c" + Date.now().toString(36);
     S.custom.push({ id, name, target });
+    S.names[id] = name;
     S.current = id;
     save();
     $("addName").value = "";
@@ -588,10 +593,20 @@
     if (!$("dim").classList.contains("hidden")) { setDim(false); return true; }
     return false;
   };
-  window.setInsets = function (top, bottom) {
-    document.documentElement.style.setProperty("--inset-top", top + "px");
-    document.documentElement.style.setProperty("--inset-bottom", bottom + "px");
+  window.setInsets = function (top, bottom, keyboard) {
+    const root = document.documentElement.style;
+    root.setProperty("--inset-top", top + "px");
+    root.setProperty("--inset-bottom", bottom + "px");
+    root.setProperty("--kb", (keyboard || 0) + "px");
+    if (keyboard > 0) setTimeout(revealFocused, 50);
   };
+  function revealFocused() {
+    const el = document.activeElement;
+    if (el && el.matches("input, textarea")) el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  document.addEventListener("focusin", (e) => {
+    if (e.target.matches("input, textarea")) setTimeout(revealFocused, 300);
+  });
   window.onAndroidResume = function () {
     applyNativeSettings();
     render(false); // the day may have changed

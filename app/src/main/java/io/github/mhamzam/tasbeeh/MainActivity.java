@@ -30,7 +30,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private boolean pageReady = false;
     private volatile boolean volumeKeys = true;
-    private float insetTop = 0f, insetBottom = 0f;
+    private float insetTop = 0f, insetBottom = 0f, insetKeyboard = 0f;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -110,22 +110,25 @@ public class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void readInsets(WindowInsets insets) {
         float density = getResources().getDisplayMetrics().density;
-        int top, bottom;
+        int top, bottom, keyboard = 0;
         if (Build.VERSION.SDK_INT >= 30) {
             android.graphics.Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
             top = i.top;
             bottom = i.bottom;
+            // Edge to edge means the window is not resized for the keyboard, so tell the page how tall it is.
+            keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom;
         } else {
             top = insets.getSystemWindowInsetTop();
             bottom = insets.getSystemWindowInsetBottom();
         }
         insetTop = top / density;
         insetBottom = bottom / density;
+        insetKeyboard = keyboard / density;
     }
 
     private void pushInsets() {
         if (!pageReady) return;
-        web.evaluateJavascript("window.setInsets && window.setInsets(" + insetTop + "," + insetBottom + ")", null);
+        web.evaluateJavascript("window.setInsets && window.setInsets(" + insetTop + "," + insetBottom + "," + insetKeyboard + ")", null);
     }
 
     @Override
@@ -166,7 +169,10 @@ public class MainActivity extends Activity {
         public void vibrate(int ms) {
             Vibrator v = vibrator();
             if (v == null || !v.hasVibrator()) return;
-            v.vibrate(VibrationEffect.createOneShot(Math.max(1, Math.min(ms, 400)), VibrationEffect.DEFAULT_AMPLITUDE));
+            // Many phones skip very short, default-strength pulses, so keep a floor and use full strength.
+            int len = Math.max(25, Math.min(ms, 400));
+            int amp = v.hasAmplitudeControl() ? 255 : VibrationEffect.DEFAULT_AMPLITUDE;
+            v.vibrate(VibrationEffect.createOneShot(len, amp));
         }
 
         /** Comma-separated off/on durations in ms, e.g. "0,70,70,140". */

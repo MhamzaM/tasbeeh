@@ -252,7 +252,7 @@ html[lang="ur"] .meaning { font-size: 1rem; line-height: 1.9; }
 
 .sheet-back {
   position: fixed;
-  inset: 0;
+  inset: 0 0 var(--kb, 0px) 0; /* sits above the on-screen keyboard */
   z-index: 10;
   background: rgba(3, 18, 16, 0.6);
   display: flex;
@@ -263,11 +263,12 @@ html[lang="ur"] .meaning { font-size: 1rem; line-height: 1.9; }
 @keyframes fade { from { opacity: 0; } }
 .sheet {
   width: min(100%, 560px);
-  max-height: 88dvh;
+  max-height: calc(88dvh - var(--kb, 0px));
   overflow-y: auto;
   background: var(--ground-2);
   border-radius: 24px 24px 0 0;
   padding: 8px 18px calc(22px + var(--safe-bottom));
+  scroll-padding-bottom: 24px;
   animation: rise 0.25s ease both;
 }
 @keyframes rise { from { transform: translateY(40px); } }
