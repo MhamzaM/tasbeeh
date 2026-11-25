@@ -1,5 +1,10 @@
-name: Build APK
+name: Build
 
+# Every push builds the app. Pushing a tag like v1.4:
+#   - sets the version from the tag (v1.4 -> versionName 1.4, versionCode 10400), so no manual bumps,
+#   - signs with your upload key (GitHub secrets ANDROID_KEYSTORE_BASE64 + ANDROID_KEYSTORE_PASSWORD),
+#   - publishes a GitHub Release with the APK (for the website) and the .aab (for Google Play),
+#   - and updates the browser version at https://mhamzam.github.io/tasbeeh/
 on:
   push:
     branches: [main]
@@ -23,26 +28,77 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          IFS=. read -r MA MI PA <<< "$V"
+          echo "APP_VERSION_NAME=$V" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$(( ${MA:-0} * 10000 + ${MI:-0} * 100 + ${PA:-0} ))" >> "$GITHUB_ENV"
+
+      - name: Upload key
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No upload key in this repo's secrets, so this build is signed with a throwaway debug key. Google Play won't accept it."
+          fi
+
+      - name: Build APK and app bundle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease bundleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Keep the files from this build
         uses: actions/upload-artifact@v4
         with:
-          name: Tasbeeh-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Tasbeeh-build
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
 
-      # Pushing a tag like v1.0 publishes a GitHub Release with the APK attached,
-      # so anyone can download it without a GitHub account.
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk Tasbeeh-${GITHUB_REF_NAME}.apk
+          cp app/build/outputs/apk/release/app-release.apk Tasbeeh-${GITHUB_REF_NAME}.apk
           # Fixed name, so the website can link to .../releases/latest/download/Tasbeeh.apk
-          cp app/build/outputs/apk/debug/app-debug.apk Tasbeeh.apk
-          gh release create "$GITHUB_REF_NAME" Tasbeeh.apk Tasbeeh-${GITHUB_REF_NAME}.apk \
+          cp app/build/outputs/apk/release/app-release.apk Tasbeeh.apk
+          # Upload this one to Google Play Console
+          cp app/build/outputs/bundle/release/app-release.aab Tasbeeh-${GITHUB_REF_NAME}-google-play.aab
+          gh release create "$GITHUB_REF_NAME" Tasbeeh.apk Tasbeeh-${GITHUB_REF_NAME}.apk Tasbeeh-${GITHUB_REF_NAME}-google-play.aab \
             --title "Tasbeeh $GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The browser version: the same screens the APK uses, published at https://mhamzam.github.io/tasbeeh/
+  # (one-time setup: repo Settings > Pages > Source: GitHub Actions)
+  web:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          mkdir -p _site
+          cp -r app/src/main/assets/app/. _site/
+          if [ -f store-listing/icon-512.png ]; then
+            cp store-listing/icon-512.png _site/icon.png
+            grep -q 'rel="icon"' _site/index.html || sed -i 's#</head>#  <link rel="icon" href="icon.png">\n</head>#' _site/index.html
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
