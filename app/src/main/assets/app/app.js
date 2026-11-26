@@ -30,7 +30,7 @@
   const T = {
     en: {
       history: "History", settings: "Settings", close: "Close", undo: "Undo", dim: "Dim", holdReset: "Hold to reset",
-      dimHint: "Tap anywhere to count", exitDim: "Exit dim mode", chooseDhikr: "Choose a dhikr", addDhikr: "Add your own",
+      dimHint: "Tap anywhere to count", exitDim: "Exit dim mode", dimLevel: "Screen brightness", dimDarker: "Darker", dimBrighter: "Brighter", chooseDhikr: "Choose a dhikr", addDhikr: "Add your own",
       name: "Name", target: "Target", add: "Add", of: (t) => "of " + t, round: (r) => "Round " + r,
       hint: "Tap anywhere to count", hintVol: "Tap anywhere, or press a volume button", hintKeys: "Tap anywhere, or press the space bar",
       targetReached: (n, t) => n + ": " + t + " done", seqDone: "Tasbeeh-e-Fatima complete", resetDone: "Counter reset",
@@ -49,7 +49,7 @@
     },
     ur: {
       history: "تاریخچہ", settings: "ترتیبات", close: "بند کریں", undo: "واپس", dim: "مدھم", holdReset: "دبا کر ری سیٹ",
-      dimHint: "گننے کے لیے کہیں بھی ٹیپ کریں", exitDim: "مدھم موڈ بند کریں", chooseDhikr: "ذکر منتخب کریں", addDhikr: "اپنا ذکر شامل کریں",
+      dimHint: "گننے کے لیے کہیں بھی ٹیپ کریں", exitDim: "مدھم موڈ بند کریں", dimLevel: "اسکرین کی روشنی", dimDarker: "مزید مدھم", dimBrighter: "مزید روشن", chooseDhikr: "ذکر منتخب کریں", addDhikr: "اپنا ذکر شامل کریں",
       name: "نام", target: "ہدف", add: "شامل کریں", of: (t) => t + " میں سے", round: (r) => "چکر " + r,
       hint: "گننے کے لیے کہیں بھی ٹیپ کریں", hintVol: "کہیں بھی ٹیپ کریں یا والیوم بٹن دبائیں", hintKeys: "کہیں بھی ٹیپ کریں یا اسپیس بار دبائیں",
       targetReached: (n, t) => n + ": " + t + " مکمل", seqDone: "تسبیحِ فاطمہ مکمل", resetDone: "گنتی صفر کر دی گئی",
@@ -79,7 +79,7 @@
     custom: [],          // [{ id, name, target }]
     names: {},           // custom id -> name, kept after deletion so history can still label it
     history: {},         // "YYYY-MM-DD" -> { id: count }
-    settings: { vibrateTap: true, vibrateTarget: true, sound: false, volumeKeys: true, keepAwake: true, showMeaning: true },
+    settings: { vibrateTap: true, vibrateTarget: true, sound: false, volumeKeys: true, keepAwake: true, showMeaning: true, dimLevel: 2 },
   });
 
   let S = load();
@@ -471,9 +471,35 @@
 
   // ------------------------------------------------------------ dim mode
 
+  // Dim levels 1 (darkest) to 10. Each maps to a screen brightness and to how bright the count text is.
+  const DIM_BRIGHTNESS = [0.005, 0.02, 0.04, 0.07, 0.1, 0.15, 0.2, 0.28, 0.38, 0.5];
+  const dimLevel = () => Math.max(1, Math.min(10, S.settings.dimLevel | 0 || 2));
+
+  function applyDimLevel() {
+    const lvl = dimLevel();
+    const dim = $("dim");
+    dim.style.setProperty("--dim-ink", (0.16 + lvl * 0.06).toFixed(2));
+    $("dimRange").value = String(lvl);
+    $("dimRange").setAttribute("aria-valuetext", lvl + " / 10");
+    $("dimDown").disabled = lvl <= 1;
+    $("dimUp").disabled = lvl >= 10;
+    if (dim.classList.contains("hidden")) return;
+    try {
+      if (native && native.setDimLevel) native.setDimLevel(DIM_BRIGHTNESS[lvl - 1]);
+      else if (native && native.setDim) native.setDim(true);
+    } catch (e) {}
+  }
+
+  function setDimLevel(lvl) {
+    S.settings.dimLevel = Math.max(1, Math.min(10, lvl));
+    save();
+    applyDimLevel();
+  }
+
   function setDim(on) {
     $("dim").classList.toggle("hidden", !on);
-    try { if (native && native.setDim) native.setDim(on); } catch (e) {}
+    if (on) applyDimLevel();
+    else try { if (native && native.setDim) native.setDim(false); } catch (e) {}
     render(false);
   }
 
@@ -484,10 +510,13 @@
     countOne();
   });
   $("dim").addEventListener("pointerdown", (e) => {
-    if (e.target.closest("#dimExit")) return;
+    if (e.target.closest("#dimExit, .dim-level")) return;
     countOne();
   });
   $("dimExit").addEventListener("click", () => setDim(false));
+  $("dimRange").addEventListener("input", (e) => setDimLevel(parseInt(e.target.value, 10)));
+  $("dimDown").addEventListener("click", () => setDimLevel(dimLevel() - 1));
+  $("dimUp").addEventListener("click", () => setDimLevel(dimLevel() + 1));
   $("dimBtn").addEventListener("click", () => setDim(true));
   $("undoBtn").addEventListener("click", undo);
 

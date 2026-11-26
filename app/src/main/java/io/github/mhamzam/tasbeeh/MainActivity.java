@@ -203,6 +203,17 @@ public class MainActivity extends Activity {
             volumeKeys = on;
         }
 
+        /** Dim mode at a chosen brightness, 0.005 (darkest) to 1. */
+        @JavascriptInterface
+        public void setDimLevel(float level) {
+            float b = Math.max(0.005f, Math.min(1f, level));
+            runOnUiThread(() -> {
+                WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.screenBrightness = b;
+                getWindow().setAttributes(lp);
+            });
+        }
+
         /** Dim mode turns the screen brightness right down; off returns to the system setting. */
         @JavascriptInterface
         public void setDim(boolean on) {
